@@ -1,0 +1,133 @@
+---
+title: "Computational Methods for Linear Model"
+author: "Fred Wu"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+header-includes:
+    - \usepackage{booktabs}
+    - \usepackage{bm}
+    - \usepackage{amsmath}
+output:
+  pdf_document:
+    fig_caption: yes
+    keep_tex: no
+    number_sections: yes
+    toc: no
+  fontsize: 11pt
+  classoption: letter
+  documentclass: article
+editor_options: 
+  markdown: 
+    wrap: 80
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+This file [^render] contains my own studies on the computations of
+generalised linear models using **`R/C++`** (particularly `Rcpp`).
+
+[^render]: When compiling this document, instead of `knit` from `RStudio` interface, 
+using `rmarkdown::render("lm.Rmd")` from the console could access Environment for 
+pre-defined or pre-compiled objects or functions. This could be useful if you don't 
+want **`C++`** codes to be compiled every time when you generate the document. 
+In the `Rcpp` chunk below, the codes will not run but use the one that has already 
+been compiled in the global environment.
+
+# Exponential Family
+
+A random variable $Y$ is said to have distribution belonging to an
+exponential dispersion family if it has density or mass function of the
+form
+
+$$
+f(y_i; \theta, \phi) = \text{exp}\left\{\frac{y_i \theta-b(\theta)}{a(\phi)}+ 
+c(y_i, \phi)\right\}.
+$$ 
+where $y_i$ is the $i$th observation and $\Theta = [\theta, \phi]$ is a vector of 
+unknown parameters. then the likelihood and the log-likelihood functions are 
+defined as
+$$
+L(\Theta;y_i) = f(y_i;\Theta)
+$$
+and
+
+$$
+l(\Theta;y_i) = \text{log}f(y_i;\Theta).
+$$ 
+
+In seeking to estimate the parameters, we regard $\Theta$ as an argument of the 
+function whilst the observed samples are considered to be fixed. However, in 
+analysing the statistical properties of the function, we restore the random 
+character to the observed samples, as different samples provide different 
+estimates of the likelihood function. Therefore, it is necessary to remember 
+that $L(\Theta;y_i) = f(y_i;\Theta)$, the likelihood is a probability density 
+function of the observation (given the parameter values). 
+
+## Derivation of $\text{E}(Y_i)$ & $\text{Var}(Y_i)$ {-}
+
+For an exponential family distribution, we could compute its mean and variance with a general formula from the above equation with
+
+$$
+\begin{aligned}
+\text{E}\left(Y_i \right) 
+& = \text{E}\left(\frac{\partial l(\Theta; y_i)}{\partial \theta}\right) + b'(\theta)\\
+\text{Var}\left(Y_i\right)/\left[\alpha(\phi)\right]^2 
+&= \text{E}\left(\frac{\partial l(\Theta; y_i)}{\partial \theta}\right)^2 \\ 
+& = \text{E}\left(\frac{y_i - b'(\theta)}{a(\phi)}\right)^2.
+\end{aligned}
+$$
+
+### Property of likelihood function {-}
+
+For a probability density function with any observed sample $i$, $\int f(y_i; \Theta) dy_i = \int L(\Theta; y_i) = 1$. Taking the partial derivative w.r.t $\theta$ gives rise to $\frac{\partial}{\partial \theta}\int L(\Theta; y_i) dy_i = \int\frac{\partial}{\partial\theta}L(\Theta; y_i) dy_i =0$
+
+The score function is the first derivative of the log-likelihood
+function
+
+$$
+\begin{aligned}
+\frac{\partial l(\Theta;y_i)}{\partial\theta}
+& = \frac{\partial}{\partial \theta}\text{log}L(\Theta; y_i) \\
+& = \frac{\partial}{\partial \theta} L(\Theta; y_i)\frac{1}{L(\Theta; y_i)} \\
+\frac{\partial}{\partial \theta}L(\Theta; y_i) 
+&= \frac{\partial l(\Theta;y_i)}{\partial \theta} L(\Theta;y_i)
+\end{aligned}
+$$
+
+Considering $\theta_0$ is the true value of $\theta$, and take the expected value
+on the score function over the sample space $\mathcal{Y}$
+
+$$
+\begin{aligned}
+\text{E}\left(\frac{\partial l(\Theta;y_i)}{\partial \theta} \bigg\rvert_{\theta=\theta_0} \right)
+& = \int_\mathcal{Y} \frac{\partial l(\theta_0;y_i)}{\partial \theta} f(y_i;\theta_0)dy_i \\
+& = \int_\mathcal{Y} \frac{\partial}{\partial \theta} L(\theta_0; y_i)\frac{1}{L(\theta_0; y_i)} L(\theta_0;y_i)dy_i \\
+& = 0
+\end{aligned}
+$$
+
+Therefore, we derived that
+
+$$
+\text{E}\left(Y_i\right) = b'\left(\theta\right)
+$$
+
+The reason to use $\theta_0$ as a true value in the above calculation instead of 
+$\theta$ for both likelihood and density functions is to emphasise the difference 
+in how we interpret each one. The likelihood function is viewed as a function of 
+$\theta$ with the observed data held fixed, but the density function is a model 
+that describes the random behaviour of $Y_i=y_i$ when $\theta$ is fixed but unknown. 
+For a likelihood function, the interest lies in finding a $\theta$ that the 
+observed data is more likely to have occurred under $f(y_i;\theta_0)$. This means
+different $\theta$s can be used to evaluate the likelihood function. Only being 
+evaluated at the true value $\theta_0$ or at the same value of $\theta$ as in the 
+population density is the expectation of the score function has mean zero.
+
+
+
+
+
+

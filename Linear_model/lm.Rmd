@@ -1,0 +1,129 @@
+---
+title: "Computational Methods for Linear Model"
+author: "Jianyun Wu"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+header-includes:
+    - \usepackage{booktabs}
+    - \usepackage{bm}
+    - \usepackage{amsmath}
+output:
+  pdf_document:
+    fig_caption: yes
+    keep_tex: no
+    number_sections: yes
+    toc: no
+  fontsize: 11pt
+  classoption: letter
+  documentclass: article
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echol = FALSE, eval = FALSE)
+knitr::knit_engines$set(python = reticulate::eng_python)
+```
+
+
+This file [^render] contains my own studies on the computations of linear models using **`R/C++`** (particularly `Rcpp`). I will implement QR decomposition for least square problems to estimate regression coefficients. I will use `sperm competition data I` from the `gamair` package for a simple illustration.  
+
+[^render]: When compiling this document, instead of `knit` from `RStudio` interface, using `rmarkdown::render("lm.Rmd")` from the console could access Environment for pre-defined or pre-compiled objects or functions. This could be useful if you don't want **`C++`** codes to be compiled every time when you generate the document. In the `Rcpp` chunk below, the codes will not run but use the one that has already been compiled in the global environment.                                                         
+
+A linear model could be estimated in **`R`** as follows
+```{r }
+library(gamair)
+data("sperm.comp1")
+lmf <- lm(count ~ time.ipc + prop.partner, sperm.comp1)
+summary(lmf)
+```
+
+For a linear regression, the coefficients could be estimated by the method of least square, which is to minimize
+
+$$
+\hat{\beta} = \text{arg min}\|y-X\beta\|^2 
+$$
+
+## Function `lmQR`
+
+```{r, eval=FALSE}
+X_mat <- model.matrix(~ time.ipc + prop.partner, sperm.comp1)
+y <- sperm.comp1$count
+
+lmQR <- function(X, y) {
+  xQR <- qr(X)
+  R <- qr.R(xQR)
+  xTxInv <- chol2inv(R)
+  lmCoef <- qr.coef(xQR, y)
+  df <- nrow(X) - ncol(X)
+  residVar <- crossprod(y - X %*% lmCoef) / df
+  lmCoefStdErr <- sqrt(as.numeric(residVar) * diag(xTxInv))
+  list(coefficients = as.numeric(lmCoef), stderr = lmCoefStdErr,
+       df.residuals = df)
+}
+```
+```{r}
+lmQR(X_mat, y)
+```
+
+## Function `lmRcpp`
+
+`Armadillo` is a high performance **`C++`** library for linear algebra and scientific computing. It is extremely esay to use thanks to its design of syntax analogue to **`Matlab`**. The `R` package `RcppArmadillo` comes up with its own functions for linear model, which are `fastLm` and `fastLmPure`. The latter provides a reference use case of the `Armadillo` library, which will be used to conduct a speed test. 
+
+The following **C++** codes were written with `Rcpp` and `RcppArmadillo` by implementing the `QR` decomposition as well, which returned the same result as from `lmQR`. It is clear that the overall logic to implement the `QR` decomposition for linear regression is the same as in `lmQR` with very similar syntax. 
+
+
+```{r, eval = FALSE}
+library(Rcpp)
+
+lmRcpp <- '
+#include <RcppArmadillo.h>
+using namespace arma;
+using Rcpp::_;
+
+//[[Rcpp::depends(RcppArmadillo)]]
+// [[Rcpp::export]]
+Rcpp::List lmRcpp(const mat &X, const vec &y) {
+  
+  mat Q;
+  mat R;
+  qr_econ(Q, R, X);
+
+  mat xTxInv = square(inv(trimatu(R)));
+  vec coef = solve(trimatu(R), Q.t() * y);
+  vec res = y - X * coef;
+  int df = X.n_rows - X.n_cols;
+  double residVar = arma::dot(res, res) / (double) df;
+  vec coefStdErr = sqrt(residVar * sum(xTxInv, 1));
+
+  
+  return Rcpp::List::create(_["coef"] = coef,
+                            _["coefStdErr"] = coefStdErr,
+                            _["df"] = df);
+  
+}'
+
+sourceCpp(code = lmRcpp)
+
+```
+```{r}
+lapply(lmRcpp(X_mat, y), as.numeric)
+```
+
+Here is a speed comparison between my functions, `fastLmPure` from the `RcppArmadillo` package with a simulated data. It is a surprise to see that `lmRcpp` works much faster than `fastLmPure`. 
+
+```{r, fig.height=4, fig.height=4, message=FALSE}
+library(RcppArmadillo)
+set.seed(1216)
+n <- 500
+p <- 10
+X <- matrix(rnorm(n * p), n)
+y <- rowSums(X) + rnorm(n)
+(ans <- microbenchmark(lmQR(X, y), 
+                       lmRcpp(X, y), 
+                       RcppArmadillo::fastLmPure(X, y), 
+                       RcppEigen::fastLmPure(X, y, 0L),
+                       RcppEigen::fastLmPure(X, y, 2L), 
+                       times = 1000))
+ggplot2::autoplot(ans)
+```
+
+## Summary
+In **`R`**, to extract the diagonal of $(R^{T}R)^{-1}$, where $R$ is an upper  triangular matrix from the `QR` decomposition,  `chol2inv()` is much faster than `tcrossprod(solve(R))`, `apply(solve(R)^2, 1, sum)` or `backsolve(R, solve(t(R)))`, in which the last two ways are similar in speed test. However, in **`C++`** with `RcppArmadillo`, the equivalent way `sum(square(inv(R)), 1)` is much faster than the equivalent `backsolve::solve(R, inv(R.t()))`.    
