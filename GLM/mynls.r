@@ -23,7 +23,7 @@ update_parm <- function(X, y, fun, dfun, parm, theta, wt) {
             sqrtW = 1
         }
         
-    } else if (is.vector(wt) & is.numeric(wt)) {
+    } else if (is.vector(wt) && is.numeric(wt)) {
         sqrtW <- wt
     }
     
